@@ -1,0 +1,9 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="sounds/success.wav">sounds/success.wav</file>
+        <file alias="sounds/error.wav">sounds/error.wav</file>
+        <file alias="sounds/click.wav">sounds/click.wav</file>
+        <file alias="styles/dark.qss">src/styles/dark.qss</file>
+        <file alias="styles/light.qss">src/styles/light.qss</file>
+    </qresource>
+</RCC>
