@@ -1,10 +1,26 @@
 #include "ui/packagedelegate.h"
+#include "core/repositoryinfo.h"
 #include "core/searchmodel.h"
 #include <QPainter>
+
+namespace {
+constexpr int Padding      = 8;
+constexpr int BadgeWidth   = 60;
+constexpr int RowHeight    = 62;
+constexpr int TrailingArea = 80;
+
+// Texto sobre os badges pastel: escuro nos dois temas, por contraste.
+const QColor BadgeTextColor("#1e1e2e");
+} // namespace
 
 PackageDelegate::PackageDelegate(QObject *parent)
     : QStyledItemDelegate(parent)
 {
+}
+
+void PackageDelegate::setThemeColors(bool dark)
+{
+    m_colors = dark ? darkTheme() : lightTheme();
 }
 
 void PackageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
@@ -13,94 +29,81 @@ void PackageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
 
-    bool isSelected = option.state & QStyle::State_Selected;
-    bool isHovered = option.state & QStyle::State_MouseOver;
+    const bool isSelected = option.state & QStyle::State_Selected;
+    const bool isHovered = option.state & QStyle::State_MouseOver;
+    const QRect rect = option.rect;
+    const QRect cardRect = rect.adjusted(4, 2, -4, -2);
 
-    QRect rect = option.rect;
-    int padding = 8;
-    int badgeWidth = 60;
-
-    QColor bgColor = isSelected ? QColor("#45475a") : QColor("#1e1e2e");
-    if (isHovered && !isSelected)
-        bgColor = QColor("#313244");
+    QColor bgColor(m_colors.bg1);
+    if (isSelected)
+        bgColor = QColor(m_colors.hoverBg);
+    else if (isHovered)
+        bgColor = QColor(m_colors.border);
 
     painter->setPen(Qt::NoPen);
     painter->setBrush(bgColor);
-    painter->drawRoundedRect(rect.adjusted(4, 2, -4, -2), 8, 8);
+    painter->drawRoundedRect(cardRect, 8, 8);
 
     if (isSelected) {
-        painter->setPen(QPen(QColor("#89b4fa"), 2));
+        painter->setPen(QPen(QColor(m_colors.accent), 2));
         painter->setBrush(Qt::NoBrush);
-        painter->drawRoundedRect(rect.adjusted(4, 2, -4, -2), 8, 8);
+        painter->drawRoundedRect(cardRect, 8, 8);
     }
 
-    QString repoColorStr = index.data(SearchModel::RepoBadgeColorRole).toString();
-    QColor repoColor(repoColorStr);
+    const auto repoType = static_cast<SearchItem::Repository>(
+        index.data(SearchModel::RepositoryTypeRole).toInt());
 
-    QRect badgeRect(rect.left() + padding + 4, rect.top() + 8, badgeWidth, 22);
-    painter->setBrush(repoColor);
+    const QRect badgeRect(rect.left() + Padding + 4, rect.top() + 8, BadgeWidth, 22);
+    painter->setBrush(QColor(RepositoryInfo::badgeColor(repoType)));
     painter->setPen(Qt::NoPen);
     painter->drawRoundedRect(badgeRect, 11, 11);
 
-    QString repoType;
-    switch (index.data(SearchModel::RepositoryTypeRole).toInt()) {
-    case 0: repoType = "Repo"; break;
-    case 1: repoType = "AUR"; break;
-    case 2: repoType = "Flatpak"; break;
-    }
-    painter->setPen(QColor("#1e1e2e"));
     QFont badgeFont = option.font;
     badgeFont.setPixelSize(10);
     badgeFont.setBold(true);
     painter->setFont(badgeFont);
-    painter->drawText(badgeRect, Qt::AlignCenter, repoType);
+    painter->setPen(BadgeTextColor);
+    painter->drawText(badgeRect, Qt::AlignCenter, RepositoryInfo::shortLabel(repoType));
+
+    const int textLeft = rect.left() + Padding + BadgeWidth + 12;
+    const int textWidth = rect.width() - BadgeWidth - Padding * 2 - TrailingArea;
+
+    auto drawElided = [&](const QString &text, int top, int height) {
+        const QRect box(textLeft, rect.top() + top, textWidth, height);
+        painter->drawText(box, Qt::AlignLeft | Qt::AlignVCenter,
+                          painter->fontMetrics().elidedText(text, Qt::ElideRight, box.width()));
+    };
 
     QFont nameFont = option.font;
     nameFont.setPixelSize(13);
     nameFont.setBold(true);
     painter->setFont(nameFont);
-    painter->setPen(isSelected ? QColor("#cdd6f4") : QColor("#cdd6f4"));
+    painter->setPen(QColor(m_colors.fg1));
+    drawElided(index.data(SearchModel::NameRole).toString(), 6, 20);
 
-    QString name = index.data(SearchModel::NameRole).toString();
-    QRect nameRect(rect.left() + padding + badgeWidth + 12, rect.top() + 6,
-                   rect.width() - badgeWidth - padding * 2 - 80, 20);
-    painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter,
-                      painter->fontMetrics().elidedText(name, Qt::ElideRight, nameRect.width()));
+    QFont smallFont = option.font;
+    smallFont.setPixelSize(11);
+    painter->setFont(smallFont);
+    painter->setPen(QColor(m_colors.fg2));
+    drawElided(index.data(SearchModel::VersionRole).toString(), 24, 16);
 
-    QFont versionFont = option.font;
-    versionFont.setPixelSize(11);
-    painter->setFont(versionFont);
-    painter->setPen(QColor("#a6adc8"));
-
-    QString version = index.data(SearchModel::VersionRole).toString();
-    QRect versionRect(rect.left() + padding + badgeWidth + 12, rect.top() + 24,
-                      rect.width() - badgeWidth - padding * 2 - 80, 16);
-    painter->drawText(versionRect, Qt::AlignLeft | Qt::AlignVCenter,
-                      painter->fontMetrics().elidedText(version, Qt::ElideRight, versionRect.width()));
-
-    QString desc = index.data(SearchModel::DescriptionRole).toString();
-    if (!desc.isEmpty()) {
-        QFont descFont = option.font;
-        descFont.setPixelSize(11);
-        painter->setFont(descFont);
-        painter->setPen(QColor("#585b70"));
-        QRect descRect(rect.left() + padding + badgeWidth + 12, rect.top() + 40,
-                       rect.width() - badgeWidth - padding * 2 - 80, 16);
-        painter->drawText(descRect, Qt::AlignLeft | Qt::AlignVCenter,
-                          painter->fontMetrics().elidedText(desc, Qt::ElideRight, descRect.width()));
+    const QString description = index.data(SearchModel::DescriptionRole).toString();
+    if (!description.isEmpty()) {
+        painter->setPen(QColor(m_colors.fg3));
+        drawElided(description, 40, 16);
     }
 
-    bool installed = index.data(SearchModel::IsInstalledRole).toBool();
-    if (installed) {
-        QRect installedRect(rect.right() - padding - 70, rect.top() + 10, 65, 20);
-        painter->setBrush(QColor("#a6e3a1"));
+    if (index.data(SearchModel::IsInstalledRole).toBool()) {
+        const QRect installedRect(rect.right() - Padding - 70, rect.top() + 10, 65, 20);
+        painter->setBrush(QColor(m_colors.green));
         painter->setPen(Qt::NoPen);
         painter->drawRoundedRect(installedRect, 10, 10);
-        painter->setPen(QColor("#1e1e2e"));
-        QFont instFont = option.font;
-        instFont.setPixelSize(10);
-        instFont.setBold(true);
-        painter->setFont(instFont);
+
+        QFont installedFont = option.font;
+        installedFont.setPixelSize(10);
+        installedFont.setBold(true);
+        painter->setFont(installedFont);
+        painter->setPen(BadgeTextColor);
         painter->drawText(installedRect, Qt::AlignCenter, "Instalado");
     }
 
@@ -111,5 +114,5 @@ QSize PackageDelegate::sizeHint(const QStyleOptionViewItem &option,
                                 const QModelIndex &index) const
 {
     Q_UNUSED(index)
-    return QSize(option.rect.width(), 62);
+    return QSize(option.rect.width(), RowHeight);
 }

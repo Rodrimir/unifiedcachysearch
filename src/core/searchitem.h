@@ -1,9 +1,11 @@
 #ifndef SEARCHITEM_H
 #define SEARCHITEM_H
 
-#include <QString>
 #include <QList>
+#include <QString>
+#include "core/command.h"
 
+// Um pacote encontrado em qualquer uma das tres fontes.
 class SearchItem
 {
 public:
@@ -13,50 +15,60 @@ public:
         Flatpak
     };
 
-    SearchItem();
+    SearchItem() = default;
     SearchItem(const QString &name, const QString &version,
                const QString &repository, const QString &displayName,
-               const QString &installCommand);
+               const Command &installCommand)
+        : m_name(name)
+        , m_version(version)
+        , m_repository(repository)
+        , m_displayName(displayName)
+        , m_installCommand(installCommand)
+    {
+    }
 
-    QString name() const;
-    void setName(const QString &name);
+    QString name() const { return m_name; }
+    void setName(const QString &name) { m_name = name; }
 
-    QString version() const;
-    void setVersion(const QString &version);
+    QString version() const { return m_version; }
+    void setVersion(const QString &version) { m_version = version; }
 
-    QString repository() const;
-    void setRepository(const QString &repository);
+    QString repository() const { return m_repository; }
+    void setRepository(const QString &repository) { m_repository = repository; }
 
-    QString displayName() const;
-    void setDisplayName(const QString &displayName);
+    QString displayName() const { return m_displayName; }
+    void setDisplayName(const QString &displayName) { m_displayName = displayName; }
 
-    QString installCommand() const;
-    void setInstallCommand(const QString &installCommand);
+    Command installCommand() const { return m_installCommand; }
+    void setInstallCommand(const Command &command) { m_installCommand = command; }
+    // Forma textual, para exibicao e exportacao.
+    QString installCommandText() const { return m_installCommand.toString(); }
 
-    QString description() const;
-    void setDescription(const QString &description);
+    QString description() const { return m_description; }
+    void setDescription(const QString &description) { m_description = description; }
 
-    bool isInstalled() const;
-    void setIsInstalled(bool installed);
+    bool isInstalled() const { return m_isInstalled; }
+    void setIsInstalled(bool installed) { m_isInstalled = installed; }
 
-    Repository repositoryType() const;
-    void setRepositoryType(Repository type);
+    Repository repositoryType() const { return m_repositoryType; }
+    void setRepositoryType(Repository type) { m_repositoryType = type; }
 
-    int relevanceScore() const;
-    void setRelevanceScore(int score);
+    int relevanceScore() const { return m_relevanceScore; }
+    void setRelevanceScore(int score) { m_relevanceScore = score; }
 
 private:
     QString m_name;
     QString m_version;
     QString m_repository;
     QString m_displayName;
-    QString m_installCommand;
+    Command m_installCommand;
     QString m_description;
     bool m_isInstalled = false;
     Repository m_repositoryType = Pacman;
     int m_relevanceScore = 0;
 };
 
+// Resultado do cruzamento entre as tres fontes.
 struct CrossReferenceResult {
     QList<SearchItem> pacman;
     QList<SearchItem> aur;

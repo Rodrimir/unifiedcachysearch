@@ -1,18 +1,20 @@
 set(TEST_SOURCES
     test_search.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/searchitem.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/command.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/exportservice.cpp
     ${CMAKE_SOURCE_DIR}/src/core/searchmodel.cpp
-    ${CMAKE_SOURCE_DIR}/src/engine/searchengine.cpp
+    ${CMAKE_SOURCE_DIR}/src/engine/commandbuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/engine/packageparser.cpp
 )
 
 add_executable(test_search ${TEST_SOURCES})
 
 target_link_libraries(test_search PRIVATE
-    Qt6::Widgets
-    Qt6::Concurrent
-    Qt6::Network
+    Qt6::Core
     Qt6::Test
 )
+
+target_compile_options(test_search PRIVATE -Wall -Wextra)
 
 target_include_directories(test_search PRIVATE ${CMAKE_SOURCE_DIR}/src)
 

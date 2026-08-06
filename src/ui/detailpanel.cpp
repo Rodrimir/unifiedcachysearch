@@ -1,15 +1,12 @@
 #include "ui/detailpanel.h"
+#include "core/repositoryinfo.h"
 #include "core/theme.h"
-#include "ui/presentationhelper.h"
-#include "engine/searchengine.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QFrame>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
 
 DetailPanel::DetailPanel(QWidget *parent)
     : QWidget(parent)
-    , m_selectedCount(0)
-    , m_isDark(true)
 {
     setThemeColors(true);
     setupUI();
@@ -110,12 +107,12 @@ void DetailPanel::setupUI()
     m_uninstallButton->hide();
 
     connect(m_installButton, &QPushButton::clicked, this, [this]() {
-        if (!m_currentCommands.isEmpty())
-            emit installRequested(m_currentCommands);
+        if (m_hasPackage)
+            emit installRequested();
     });
     connect(m_uninstallButton, &QPushButton::clicked, this, [this]() {
-        if (!m_currentUninstallCommand.isEmpty())
-            emit uninstallRequested(m_currentUninstallCommand);
+        if (!m_uninstallCommand.isEmpty())
+            emit uninstallRequested(m_uninstallCommand);
     });
 
     buttonLayout->addWidget(m_installButton);
@@ -224,53 +221,47 @@ void DetailPanel::setThemeColors(bool dark)
     .arg(c.bg1, c.bg2, c.fg1, c.fg2, c.fg3, c.accent, c.green, c.red));
 }
 
-QString DetailPanel::currentCommand() const
+void DetailPanel::updateInstallButtonText()
 {
-    return m_currentCommands.isEmpty() ? QString() : m_currentCommands.first();
+    if (!m_hasPackage)
+        return;
+
+    if (m_selectedCount > 1) {
+        const QString action = m_updateMode ? "Atualizar" : "Instalar";
+        m_installButton->setText(QString("%1 (%2 pacotes)...").arg(action).arg(m_selectedCount));
+    } else if (m_updateMode) {
+        m_installButton->setText("Atualizar");
+    } else {
+        // Antes isso era deduzido do texto do label de status.
+        m_installButton->setText(m_currentInstalled ? "Reinstalar" : "Instalar Pacote");
+    }
 }
 
 void DetailPanel::setSelectedCount(int count)
 {
     m_selectedCount = count;
-    if (!m_currentCommands.isEmpty()) {
-        if (count > 1) {
-            QString action = m_updateMode ? "Atualizar" : "Instalar";
-            m_installButton->setText(QString("%1 (%2 pacotes)...").arg(action).arg(count));
-        } else {
-            if (m_updateMode) {
-                m_installButton->setText("Atualizar");
-            } else {
-                bool installed = m_statusLabel->text().contains("Instalado");
-                m_installButton->setText(installed ? "Reinstalar" : "Instalar Pacote");
-            }
-        }
-    }
+    updateInstallButtonText();
 }
 
 void DetailPanel::setUpdateMode(bool updateMode)
 {
     m_updateMode = updateMode;
     m_cmdTitle->setText(updateMode ? "Comando de Atualização" : "Comando de Instalação");
-    if (!m_currentCommands.isEmpty())
-        setSelectedCount(m_selectedCount);
+    updateInstallButtonText();
 }
 
-void DetailPanel::showPackage(const SearchItem &item)
+void DetailPanel::showPackage(const SearchItem &item, const Command &uninstallCommand)
 {
     m_emptyLabel->hide();
     m_contentWidget->show();
 
-    QString repoType;
-    switch (item.repositoryType()) {
-    case SearchItem::Pacman: repoType = "Pacman"; break;
-    case SearchItem::AUR: repoType = "AUR"; break;
-    case SearchItem::Flatpak: repoType = "Flatpak"; break;
-    }
-
-    m_iconLabel->setText(PresentationHelper::repoIcon(item.repositoryType()));
+    m_iconLabel->setText(RepositoryInfo::icon(item.repositoryType()));
     m_nameLabel->setText(item.name());
     m_versionLabel->setText(QString("Versão: %1").arg(item.version()));
-    m_repoLabel->setText(QString("Repositório: %1 (%2)").arg(repoType, item.repository()));
+    m_repoLabel->setText(QString("Repositório: %1 (%2)")
+                             .arg(RepositoryInfo::name(item.repositoryType()), item.repository()));
+
+    m_currentInstalled = item.isInstalled();
 
     if (m_updateMode) {
         m_statusLabel->setText("Status: Atualização disponível");
@@ -292,21 +283,25 @@ void DetailPanel::showPackage(const SearchItem &item)
         m_uninstallButton->hide();
     }
 
-    m_descriptionLabel->setText(item.description().isEmpty() ? "Sem descrição disponível." : item.description());
-    m_commandLabel->setText(item.installCommand());
+    m_descriptionLabel->setText(item.description().isEmpty()
+        ? QStringLiteral("Sem descrição disponível.")
+        : item.description());
+    m_commandLabel->setText(item.installCommandText());
 
-    m_currentCommands.clear();
-    m_currentCommands << item.installCommand();
-    m_currentUninstallCommand = SearchEngine::uninstallCmd(item.name(), item.repositoryType());
+    m_installCommand = item.installCommand();
+    m_uninstallCommand = uninstallCommand;
+    m_hasPackage = true;
 
-    setSelectedCount(m_selectedCount);
+    updateInstallButtonText();
 }
 
 void DetailPanel::clear()
 {
     m_contentWidget->hide();
     m_emptyLabel->show();
-    m_currentCommands.clear();
-    m_currentUninstallCommand.clear();
+    m_installCommand = {};
+    m_uninstallCommand = {};
+    m_hasPackage = false;
+    m_currentInstalled = false;
     m_selectedCount = 0;
 }

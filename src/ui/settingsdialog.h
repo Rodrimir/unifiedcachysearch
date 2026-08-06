@@ -2,7 +2,6 @@
 #define SETTINGSDIALOG_H
 
 #include <QDialog>
-#include <QSettings>
 #include <QTabWidget>
 #include <QComboBox>
 #include <QCheckBox>
@@ -30,8 +29,6 @@ private:
     void setupAboutTab(QTabWidget *tabs);
     void loadSettings();
     void saveSettings();
-
-    QSettings m_settings;
 
     // General
     QComboBox *m_themeCombo;

@@ -24,6 +24,8 @@ protected:
     bool lessThan(const QModelIndex &left, const QModelIndex &right) const override;
 
 private:
+    void reapplyFilter();
+
     bool m_filterPacman = true;
     bool m_filterAur = true;
     bool m_filterFlatpak = true;

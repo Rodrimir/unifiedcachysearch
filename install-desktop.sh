@@ -15,26 +15,18 @@ if [ ! -f "$BINARY" ]; then
 fi
 chmod +x "$BINARY"
 
-# --- Gera o icone SVG ---
+# --- Instala o icone SVG (fonte unica: assets/icons) ---
+ICON_SOURCE="$SCRIPT_DIR/assets/icons/$APP_ID.svg"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 ICON_PATH="$ICON_DIR/$APP_ID.svg"
-mkdir -p "$ICON_DIR"
 
-cat > "$ICON_PATH" << 'SVG'
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#313244"/>
-      <stop offset="100%" stop-color="#1e1e2e"/>
-    </linearGradient>
-  </defs>
-  <rect width="128" height="128" rx="24" fill="url(#bg)"/>
-  <circle cx="52" cy="52" r="28" fill="none" stroke="#89b4fa" stroke-width="6"/>
-  <circle cx="52" cy="52" r="12" fill="#89b4fa" opacity="0.3"/>
-  <line x1="72" y1="72" x2="96" y2="96" stroke="#89b4fa" stroke-width="7" stroke-linecap="round"/>
-  <text x="64" y="118" font-family="sans-serif" font-size="12" fill="#a6adc8" text-anchor="middle">CACHY</text>
-</svg>
-SVG
+if [ ! -f "$ICON_SOURCE" ]; then
+    echo "[cachysearch] Icone nao encontrado em: $ICON_SOURCE"
+    exit 1
+fi
+
+mkdir -p "$ICON_DIR"
+cp "$ICON_SOURCE" "$ICON_PATH"
 
 # --- Cria o arquivo .desktop ---
 DESKTOP_DIR="$HOME/.local/share/applications"

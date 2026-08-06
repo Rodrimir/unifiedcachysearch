@@ -1,47 +1,76 @@
 #include "engine/commandrunner.h"
+#include <QProcessEnvironment>
 
 CommandRunner::CommandRunner(QObject *parent)
     : QObject(parent)
 {
 }
 
-void CommandRunner::runCommand(const QString &command, const QString &actionLabel)
+QProcess *CommandRunner::createProcess(const Command &command)
 {
-    emit progressChanged(QString("%1: %2 ...").arg(actionLabel, command));
-    emit progressBarVisible(true);
+    auto *proc = new QProcess(this);
+    proc->setProcessChannelMode(QProcess::MergedChannels);
 
-    QStringList parts = command.split(' ', Qt::SkipEmptyParts);
-    if (parts.isEmpty()) {
+    const auto &extraEnv = command.environment();
+    if (!extraEnv.isEmpty()) {
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        for (auto it = extraEnv.cbegin(); it != extraEnv.cend(); ++it)
+            env.insert(it.key(), it.value());
+        proc->setProcessEnvironment(env);
+    }
+    return proc;
+}
+
+void CommandRunner::reportFailedToStart(QProcess *process, const QString &label)
+{
+    // Com FailedToStart o sinal finished() nunca chega; sem tratar isso a
+    // barra de progresso ficava girando para sempre.
+    emit progressBarVisible(false);
+    emit consoleMessage(QString("Não foi possível executar \"%1\": %2")
+                            .arg(process->program(), process->errorString()), 2);
+    emit commandFinished(false, label);
+}
+
+void CommandRunner::runCommand(const Command &command, const QString &actionLabel)
+{
+    if (command.isEmpty()) {
         emit commandFinished(false, actionLabel);
         return;
     }
 
-    QString program = parts.first();
-    QStringList args = parts.mid(1);
+    emit progressChanged(QString("%1: %2 ...").arg(actionLabel, command.toString()));
+    emit progressBarVisible(true);
 
-    auto *proc = new QProcess(this);
+    auto *proc = createProcess(command);
     emit processAttached(proc);
 
-    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, [this, proc, actionLabel](int exitCode, QProcess::ExitStatus status) {
+    connect(proc, &QProcess::errorOccurred, this,
+            [this, proc, actionLabel](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart)
+            return;
+        reportFailedToStart(proc, actionLabel);
+        proc->deleteLater();
+    });
+
+    connect(proc, &QProcess::finished, this,
+            [this, proc, actionLabel](int exitCode, QProcess::ExitStatus status) {
         emit progressBarVisible(false);
-        bool ok = (status == QProcess::NormalExit && exitCode == 0);
+        const bool ok = (status == QProcess::NormalExit && exitCode == 0);
         if (ok) {
             emit consoleMessage(QString("%1 concluída com sucesso.").arg(actionLabel), 1);
         } else {
-            QString err = QString::fromUtf8(proc->readAllStandardError());
-            emit consoleMessage(QString("Falha na %1.\n%2").arg(actionLabel, err), 2);
+            emit consoleMessage(QString("Falha na %1 (código de saída: %2).")
+                                    .arg(actionLabel).arg(exitCode), 2);
         }
         emit commandFinished(ok, actionLabel);
         proc->deleteLater();
     });
 
-    proc->setProcessChannelMode(QProcess::MergedChannels);
-    proc->start(program, args);
+    proc->start(command.program(), command.arguments());
 }
 
-void CommandRunner::runCommandsSequentially(const QStringList &commands,
-                                             const QString &overallLabel)
+void CommandRunner::runCommandsSequentially(const QList<Command> &commands,
+                                            const QString &overallLabel)
 {
     if (commands.isEmpty()) {
         emit progressBarVisible(false);
@@ -50,34 +79,42 @@ void CommandRunner::runCommandsSequentially(const QStringList &commands,
         return;
     }
 
-    emit progressChanged(QString("%1: %2 ...").arg(overallLabel, commands.first()));
-    emit progressBarVisible(true);
+    const Command current = commands.first();
+    const QList<Command> remaining = commands.mid(1);
 
-    QStringList parts = commands.first().split(' ', Qt::SkipEmptyParts);
-    if (parts.isEmpty()) {
-        runCommandsSequentially(commands.mid(1), overallLabel);
+    if (current.isEmpty()) {
+        runCommandsSequentially(remaining, overallLabel);
         return;
     }
 
-    QStringList remaining = commands.mid(1);
-    auto *proc = new QProcess(this);
+    emit progressChanged(QString("%1: %2 ...").arg(overallLabel, current.toString()));
+    emit progressBarVisible(true);
+
+    auto *proc = createProcess(current);
     emit processAttached(proc);
 
-    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, [this, proc, remaining, overallLabel](int exitCode, QProcess::ExitStatus status) {
+    connect(proc, &QProcess::errorOccurred, this,
+            [this, proc, overallLabel](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart)
+            return;
+        reportFailedToStart(proc, overallLabel);
+        emit progressChanged(QString("Erro na %1.").arg(overallLabel));
+        proc->deleteLater();
+    });
+
+    connect(proc, &QProcess::finished, this,
+            [this, proc, remaining, overallLabel](int exitCode, QProcess::ExitStatus status) {
         proc->deleteLater();
         if (status == QProcess::NormalExit && exitCode == 0) {
             emit consoleMessage(
                 QString("Comando concluído. %1 comando(s) restante(s).").arg(remaining.size()), 1);
             runCommandsSequentially(remaining, overallLabel);
         } else {
-            QString err = QString::fromUtf8(proc->readAllStandardError());
-            emit consoleMessage(QString("Falha.\n%1").arg(err), 2);
+            emit consoleMessage(QString("Falha (código de saída: %1).").arg(exitCode), 2);
             emit progressChanged(QString("Erro na %1.").arg(overallLabel));
             emit progressBarVisible(false);
         }
     });
 
-    proc->setProcessChannelMode(QProcess::MergedChannels);
-    proc->start(parts.first(), parts.mid(1));
+    proc->start(current.program(), current.arguments());
 }

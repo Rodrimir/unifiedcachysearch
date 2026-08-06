@@ -1,6 +1,18 @@
 #include "core/sortfilterproxymodel.h"
 #include "core/searchmodel.h"
 
+// Reaplica o filtro sem resetar o modelo (o reset descartava selecao e
+// scroll). invalidateFilter() virou deprecated no Qt 6.9.
+void SortFilterProxyModel::reapplyFilter()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+    beginFilterChange();
+    endFilterChange(Direction::Rows);
+#else
+    invalidateFilter();
+#endif
+}
+
 SortFilterProxyModel::SortFilterProxyModel(QObject *parent)
     : QSortFilterProxyModel(parent)
 {
@@ -8,25 +20,27 @@ SortFilterProxyModel::SortFilterProxyModel(QObject *parent)
     setSortRole(SearchModel::NameRole);
 }
 
+// invalidateFilter() e a API correta: reavalia filterAcceptsRow sem destruir a
+// selecao e o scroll como um reset de modelo faria.
 void SortFilterProxyModel::setFilterPacman(bool enabled)
 {
-    beginResetModel();
+    if (m_filterPacman == enabled) return;
     m_filterPacman = enabled;
-    endResetModel();
+    reapplyFilter();
 }
 
 void SortFilterProxyModel::setFilterAur(bool enabled)
 {
-    beginResetModel();
+    if (m_filterAur == enabled) return;
     m_filterAur = enabled;
-    endResetModel();
+    reapplyFilter();
 }
 
 void SortFilterProxyModel::setFilterFlatpak(bool enabled)
 {
-    beginResetModel();
+    if (m_filterFlatpak == enabled) return;
     m_filterFlatpak = enabled;
-    endResetModel();
+    reapplyFilter();
 }
 
 bool SortFilterProxyModel::filterPacman() const { return m_filterPacman; }
@@ -53,9 +67,6 @@ bool SortFilterProxyModel::lessThan(const QModelIndex &left, const QModelIndex &
 {
     auto *model = sourceModel();
     if (!model) return false;
-
-    int sortCol = sortColumn();
-    Q_UNUSED(sortCol)
 
     int leftScore = model->data(left, SearchModel::RelevanceScoreRole).toInt();
     int rightScore = model->data(right, SearchModel::RelevanceScoreRole).toInt();

@@ -3,7 +3,6 @@
 
 #include <QObject>
 #include <QSoundEffect>
-#include <QSettings>
 
 class SoundManager : public QObject
 {

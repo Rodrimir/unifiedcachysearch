@@ -33,6 +33,9 @@ private slots:
 private:
     void setupUI();
     void appendLine(const QString &text);
+    // Prompts de senha (sudo/pacman) mudam o campo para modo oculto.
+    static bool looksLikePasswordPrompt(const QString &text);
+    void setPasswordMode(bool enabled);
 
     QTextEdit *m_output;
     QLineEdit *m_inputLine;
@@ -41,6 +44,7 @@ private:
     QPointer<QProcess> m_activeProcess;
     QString m_readBuffer;
     QString m_colorInfo, m_colorError, m_colorSuccess, m_colorDefault;
+    bool m_passwordMode = false;
 };
 
 #endif

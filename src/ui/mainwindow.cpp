@@ -17,10 +17,10 @@
 #include <QtConcurrent>
 #include <QFutureWatcher>
 
-#include <QSettings>
 #include "audio/soundmanager.h"
-#include "ui/settingsdialog.h"
+#include "core/appsettings.h"
 #include "core/exportservice.h"
+#include "ui/settingsdialog.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -30,20 +30,14 @@ MainWindow::MainWindow(QWidget *parent)
     , m_coordinator(new SearchCoordinator(m_model, this))
     , m_searchTimer(new QTimer(this))
     , m_completer(new QCompleter(this))
+    , m_updatesWatcher(new QFutureWatcher<QList<SearchItem>>(this))
     , m_dragging(false)
     , m_resizeEdge(0)
 {
-    QSettings settings("CachyOS", "UnifiedSearch");
-    QString theme = settings.value("theme", "system").toString();
-    if (theme == "dark") {
-        m_isDark = true;
-    } else if (theme == "light") {
-        m_isDark = false;
-    } else {
-        auto colorScheme = QApplication::styleHints()->colorScheme();
-        m_isDark = (colorScheme == Qt::ColorScheme::Dark ||
-                    colorScheme == Qt::ColorScheme::Unknown);
-    }
+    const auto colorScheme = QApplication::styleHints()->colorScheme();
+    const bool systemIsDark = (colorScheme == Qt::ColorScheme::Dark ||
+                               colorScheme == Qt::ColorScheme::Unknown);
+    m_isDark = AppSettings::resolveDarkTheme(AppSettings::theme(), systemIsDark);
 
     setWindowFlags(Qt::FramelessWindowHint);
     setAttribute(Qt::WA_TranslucentBackground, false);
@@ -65,15 +59,6 @@ MainWindow::MainWindow(QWidget *parent)
 
     setCentralWidget(centralWidget);
     applyStyles(m_isDark ? "dark" : "light");
-
-    {
-        static QString qssLight, qssDark;
-        if (qssDark.isEmpty()) { QFile f(":/styles/dark.qss"); if(f.open(QFile::ReadOnly|QFile::Text)) qssDark=QString::fromUtf8(f.readAll()); }
-        if (qssLight.isEmpty()) { QFile f(":/styles/light.qss"); if(f.open(QFile::ReadOnly|QFile::Text)) qssLight=QString::fromUtf8(f.readAll()); }
-        setStyleSheet(qssLight);
-        setStyleSheet(m_isDark ? qssDark : qssLight);
-    }
-
     setupConnections();
     m_coordinator->loadSearchHistory();
     switchToSearchMode();
@@ -83,7 +68,12 @@ MainWindow::MainWindow(QWidget *parent)
     setMinimumSize(720, 500);
 }
 
-MainWindow::~MainWindow() {}
+MainWindow::~MainWindow()
+{
+    // A verificacao de atualizacoes roda numa thread e usa o engine; esperar
+    // aqui evita que ela sobreviva a janela.
+    m_updatesWatcher->waitForFinished();
+}
 
 void MainWindow::setupTitleBar(QVBoxLayout *mainLayout)
 {
@@ -342,6 +332,8 @@ void MainWindow::applyStyles(const QString &theme)
 
     m_detailPanel->setThemeColors(dark);
     m_console->setThemeColors(dark);
+    m_delegate->setThemeColors(dark);
+    m_resultView->viewport()->update();
 }
 
 void MainWindow::switchToSearchMode()
@@ -400,8 +392,7 @@ void MainWindow::setupConnections()
     connect(m_resultView->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &MainWindow::onSelectionChanged);
 
-    connect(m_detailPanel, &DetailPanel::installRequested,
-            this, [this](const QStringList &) {
+    connect(m_detailPanel, &DetailPanel::installRequested, this, [this]() {
         QModelIndexList sel = m_resultView->selectionModel()->selectedIndexes();
         if (sel.size() > 1) {
             onInstallAllClicked();
@@ -409,17 +400,14 @@ void MainWindow::setupConnections()
             QModelIndex sourceIdx = m_proxyModel->mapToSource(sel.first());
             onInstallClicked(m_coordinator->installCommandAt(sourceIdx.row()));
         } else {
-            QString cmd = m_detailPanel->currentCommand();
-            if (!cmd.isEmpty())
-                onInstallClicked(cmd);
+            onInstallClicked(m_detailPanel->currentCommand());
         }
     });
     connect(m_detailPanel, &DetailPanel::uninstallRequested,
             this, &MainWindow::onUninstallClicked);
 
     m_searchTimer->setSingleShot(true);
-    QSettings debounceSettings("CachyOS", "UnifiedSearch");
-    m_searchTimer->setInterval(debounceSettings.value("debounceDelay", 400).toInt());
+    m_searchTimer->setInterval(AppSettings::debounceDelayMs());
     connect(m_searchTimer, &QTimer::timeout, this, &MainWindow::onSearchClicked);
 
     auto *shortcutSearch = new QShortcut(QKeySequence("Ctrl+F"), this);
@@ -502,9 +490,11 @@ void MainWindow::onCheckUpdatesClicked()
     m_checkUpdatesBtn->setEnabled(false);
     m_updateInfoLabel->setText("Verificando Pacman, AUR e Flatpak...");
 
-    auto *watcher = new QFutureWatcher<QList<SearchItem>>(this);
-    connect(watcher, &QFutureWatcher<QList<SearchItem>>::finished, this, [this, watcher]() {
-        QList<SearchItem> updates = watcher->result();
+    disconnect(m_updatesWatcher, &QFutureWatcher<QList<SearchItem>>::finished, this, nullptr);
+    connect(m_updatesWatcher, &QFutureWatcher<QList<SearchItem>>::finished, this, [this]() {
+        if (m_updatesWatcher->isCanceled())
+            return;
+        QList<SearchItem> updates = m_updatesWatcher->result();
         m_model->addItems(updates);
         m_totalResults = updates.size();
         m_countLabel->setText(QString("Atualizações: %1").arg(m_totalResults));
@@ -512,10 +502,9 @@ void MainWindow::onCheckUpdatesClicked()
         m_updateInfoLabel->setText(m_totalResults > 0
             ? QString("%1 atualizações disponíveis").arg(m_totalResults)
             : "Sistema atualizado.");
-        watcher->deleteLater();
     });
 
-    watcher->setFuture(QtConcurrent::run([this]() {
+    m_updatesWatcher->setFuture(QtConcurrent::run([this]() {
         QList<SearchItem> all;
         all << m_coordinator->engine()->checkPacmanUpdates();
         all << m_coordinator->engine()->checkAurUpdates();
@@ -532,34 +521,36 @@ void MainWindow::onSearchClicked()
     m_coordinator->search(query);
 }
 
-void MainWindow::onInstallClicked(const QString &command)
+void MainWindow::onInstallClicked(const Command &command)
 {
     if (command.isEmpty()) return;
 
+    const QString commandText = command.toString();
     auto reply = QMessageBox::question(this,
         m_inUpdateMode ? "Confirmar Atualização" : "Confirmar Instalação",
         QString("%1?\n\nComando: %2")
-            .arg(m_inUpdateMode ? "Atualizar pacote" : "Instalar pacote", command),
+            .arg(m_inUpdateMode ? "Atualizar pacote" : "Instalar pacote", commandText),
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
 
     if (reply == QMessageBox::Yes) {
         m_console->show();
-        m_console->appendInfo(QString("Executando: %1").arg(command));
+        m_console->appendInfo(QString("Executando: %1").arg(commandText));
         m_coordinator->runCommand(command, m_inUpdateMode ? "atualização" : "instalação");
     }
 }
 
-void MainWindow::onUninstallClicked(const QString &command)
+void MainWindow::onUninstallClicked(const Command &command)
 {
     if (command.isEmpty()) return;
 
+    const QString commandText = command.toString();
     auto reply = QMessageBox::question(this, "Confirmar Desinstalação",
-        QString("Tem certeza que deseja desinstalar?\n\nComando: %1").arg(command),
+        QString("Tem certeza que deseja desinstalar?\n\nComando: %1").arg(commandText),
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
 
     if (reply == QMessageBox::Yes) {
         m_console->show();
-        m_console->appendInfo(QString("Desinstalando: %1").arg(command));
+        m_console->appendInfo(QString("Desinstalando: %1").arg(commandText));
         m_coordinator->runCommand(command, "desinstalação");
     }
 }
@@ -595,7 +586,7 @@ void MainWindow::onInstallAllClicked()
         ? QString("Atualizando %1 pacote(s)...").arg(items.size())
         : QString("Instalando %1 pacote(s)...").arg(items.size()));
 
-    QStringList cmds = m_coordinator->buildInstallCommands(items);
+    const QList<Command> cmds = m_coordinator->buildInstallCommands(items);
     m_coordinator->runCommandsSequentially(cmds,
         m_inUpdateMode ? "atualização" : "instalação");
 }
@@ -621,8 +612,7 @@ void MainWindow::onThemeToggle()
     m_themeButton->setText(m_isDark
         ? QString::fromUtf8("\xE2\x98\xBC")
         : QString::fromUtf8("\xE2\x98\x80"));
-    QSettings("CachyOS", "UnifiedSearch").setValue("theme",
-        m_isDark ? "dark" : "light");
+    AppSettings::setTheme(m_isDark ? "dark" : "light");
     SoundManager::instance().playClick();
 }
 
@@ -630,17 +620,14 @@ void MainWindow::onSettingsClicked()
 {
     SettingsDialog dialog(m_isDark, this);
     connect(&dialog, &SettingsDialog::settingsChanged, this, [this]() {
-        QSettings s("CachyOS", "UnifiedSearch");
-        QString theme = s.value("theme", "system").toString();
-        if (theme == "dark") m_isDark = true;
-        else if (theme == "light") m_isDark = false;
+        m_isDark = AppSettings::resolveDarkTheme(AppSettings::theme(), m_isDark);
         applyStyles(m_isDark ? "dark" : "light");
         m_themeButton->setText(m_isDark
             ? QString::fromUtf8("\xE2\x98\xBC")
             : QString::fromUtf8("\xE2\x98\x80"));
         SoundManager::instance().reloadSettings();
-        m_searchTimer->setInterval(s.value("debounceDelay", 400).toInt());
-        m_console->setMaximumHeight(s.value("consoleMaxHeight", 280).toInt());
+        m_searchTimer->setInterval(AppSettings::debounceDelayMs());
+        m_console->setMaximumHeight(AppSettings::consoleMaxHeight());
     });
     dialog.exec();
 }
@@ -652,6 +639,7 @@ void MainWindow::onCoordinatorStatus(const QString &text)
 
 void MainWindow::onCoordinatorResultsAdded(int count, int pending, int total)
 {
+    Q_UNUSED(count)
     Q_UNUSED(pending)
     m_countLabel->setText(QString("Resultados: %1").arg(total));
 }
@@ -719,8 +707,8 @@ void MainWindow::onSelectionChanged()
         m_updateSelectedBtn->setEnabled(count > 0);
     if (count == 1) {
         QModelIndex sourceIdx = m_proxyModel->mapToSource(sel.first());
-        const SearchItem &item = m_coordinator->itemAt(sourceIdx.row());
-        m_detailPanel->showPackage(item);
+        const SearchItem item = m_coordinator->itemAt(sourceIdx.row());
+        m_detailPanel->showPackage(item, m_coordinator->uninstallCommandFor(item));
     }
 }
 

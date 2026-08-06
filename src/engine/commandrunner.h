@@ -1,10 +1,12 @@
 #ifndef COMMANDRUNNER_H
 #define COMMANDRUNNER_H
 
+#include <QList>
 #include <QObject>
-#include <QStringList>
 #include <QProcess>
+#include "core/command.h"
 
+// Executa comandos externos de forma assincrona, um por vez ou em fila.
 class CommandRunner : public QObject
 {
     Q_OBJECT
@@ -12,8 +14,8 @@ class CommandRunner : public QObject
 public:
     explicit CommandRunner(QObject *parent = nullptr);
 
-    void runCommand(const QString &command, const QString &actionLabel);
-    void runCommandsSequentially(const QStringList &commands, const QString &overallLabel);
+    void runCommand(const Command &command, const QString &actionLabel);
+    void runCommandsSequentially(const QList<Command> &commands, const QString &overallLabel);
 
 signals:
     void progressChanged(const QString &text);
@@ -22,6 +24,10 @@ signals:
     void allCommandsFinished(const QString &overallLabel);
     void processAttached(QProcess *process);
     void consoleMessage(const QString &text, int type);
+
+private:
+    QProcess *createProcess(const Command &command);
+    void reportFailedToStart(QProcess *process, const QString &label);
 };
 
 #endif

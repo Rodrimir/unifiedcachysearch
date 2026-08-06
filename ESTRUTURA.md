@@ -1,106 +1,101 @@
 # Estrutura do Projeto — CachyOS Unified Search
 
+Busca unificada de pacotes Pacman, AUR e Flatpak numa única interface Qt6.
+
 ```
-cachySearch/
+unifiedcachysearch/
 |
-|-- cachysearch-gui/                 # Diretorio principal do codigo
-|   |
-|   |-- CMakeLists.txt               # Configuracao de build (Qt6, C++17)
-|   |-- sounds.qrc                   # Recursos Qt: sons WAV + estilos QSS
-|   |-- run.sh                       # Script para compilar e executar
-|   |-- pack.sh                      # Empacotamento tar.gz
-|   |-- install-desktop.sh           # Instala atalho no menu de aplicacoes
-|   |-- ESTRUTURA.md                 # Documentacao da estrutura
-|   |
-|   |-- sounds/                      # Efeitos sonoros
-|   |   |-- success.wav              #   Som de operacao bem-sucedida
-|   |   |-- error.wav                #   Som de erro
-|   |   |-- click.wav                #   Som de clique
-|   |
-|   |-- src/                         # Codigo-fonte C++
-|   |   |
-|   |   |-- core/                    # Dados, modelos, estruturas
-|   |   |   |-- searchitem.h/.cpp          # Estrutura de dados de cada pacote
-|   |   |   |-- searchmodel.h/.cpp         # Modelo Qt (QAbstractListModel)
-|   |   |   |-- sortfilterproxymodel.h/.cpp# Filtragem e ordenacao
-|   |   |   |-- theme.h                    # Paleta de cores Catppuccin
-|   |   |
-|   |   |-- engine/                  # Logica de busca e execucao
-|   |   |   |-- searchengine.h/.cpp        # Motor: pacman, paru (AUR), flatpak
-|   |   |   |-- searchcoordinator.h/.cpp   # Orquestra pesquisas e comandos
-|   |   |   |-- commandrunner.h/.cpp       # Execucao assincrona de processos
-|   |   |
-|   |   |-- ui/                      # Widgets da interface
-|   |   |   |-- mainwindow.h/.cpp          # Janela principal + entry point main()
-|   |   |   |-- detailpanel.h/.cpp         # Painel lateral com detalhes
-|   |   |   |-- outputconsole.h/.cpp       # Console com realce de erros
-|   |   |   |-- packagedelegate.h/.cpp     # Renderizacao customizada
-|   |   |
-|   |   |-- audio/                   # Audio
-|   |   |   |-- soundmanager.h/.cpp        # Singleton de efeitos sonoros
-|   |   |
-|   |   |-- styles/                  # Folhas de estilo Qt QSS
-|   |       |-- dark.qss             #   Tema escuro (Catppuccin Mocha)
-|   |       |-- light.qss            #   Tema claro (Catppuccin Latte)
-|   |
-|   |-- tests/                       # Testes automatizados
-|   |   |-- CMakeLists.txt
-|   |   |-- test_search.cpp          # Testes do motor de busca
-|   |
-|   |-- build/                       # Artefatos de compilacao (gerado)
-|       |-- cachysearch_gui          #   Binario principal compilado
-|       |-- tests/test_search        #   Binario de teste
+|-- CMakeLists.txt               # Build (Qt6, C++17, -Wall -Wextra)
+|-- sounds.qrc                   # Recursos: sons WAV + folhas de estilo QSS
+|-- run.sh                       # Compila (Release) e executa
+|-- make-appimage.sh             # Build de producao: gera o AppImage portatil
+|-- pack.sh                      # Empacota o codigo-fonte em .tar.gz
+|-- install-desktop.sh           # Instala icone + atalho .desktop no menu
+|-- assets/icons/cachysearch.svg # Icone (fonte unica, usada pelos 2 scripts)
+|-- sounds/                      # success.wav, error.wav, click.wav
 |
-|-- ESTRUTURA.md (link simbolico)    # Este arquivo
+|-- src/
+|   |-- main.cpp
+|   |
+|   |-- core/                    # Tipos, modelos e preferencias.
+|   |   |                        # Nao executa processos e nao conhece a UI.
+|   |   |-- appsettings.h/.cpp         # Chaves e defaults do QSettings (fonte unica)
+|   |   |-- command.h/.cpp             # Comando externo: programa + args + env
+|   |   |-- searchitem.h               # Dados de um pacote (header-only)
+|   |   |-- searchmodel.h/.cpp         # QAbstractItemModel da lista
+|   |   |-- sortfilterproxymodel.h/.cpp# Filtro por tipo de repositorio
+|   |   |-- repositoryinfo.h           # Nome/icone/cor por tipo de repositorio
+|   |   |-- exportservice.h/.cpp       # Exportacao JSON / CSV / TXT
+|   |   |-- theme.h                    # Paleta Catppuccin (Mocha / Latte)
+|   |
+|   |-- engine/                  # Processos externos, parsing e orquestracao.
+|   |   |-- processrunner.h/.cpp       # Execucao sincrona + cancelamento seguro
+|   |   |-- packageparser.h/.cpp       # Parsing puro das saidas + relevancia
+|   |   |-- commandbuilder.h/.cpp      # Monta comandos de instalar/remover
+|   |   |-- searchengine.h/.cpp        # Consultas e cache do que esta instalado
+|   |   |-- searchcoordinator.h/.cpp   # Buscas paralelas + cross-reference
+|   |   |-- commandrunner.h/.cpp       # Execucao assincrona de comandos
+|   |
+|   |-- ui/                      # Widgets
+|   |   |-- mainwindow.h/.cpp          # Janela frameless, modos Busca/Atualizacoes
+|   |   |-- detailpanel.h/.cpp         # Painel lateral do pacote selecionado
+|   |   |-- outputconsole.h/.cpp       # Console com stdin e modo senha
+|   |   |-- packagedelegate.h/.cpp     # Desenho dos itens da lista
+|   |   |-- settingsdialog.h/.cpp      # Preferencias
+|   |
+|   |-- audio/
+|   |   |-- soundmanager.h/.cpp        # Singleton de efeitos sonoros
+|   |
+|   |-- styles/                  # dark.qss (Mocha) e light.qss (Latte)
+|
+|-- tests/                       # QtTest: 25 casos
+    |-- CMakeLists.txt
+    |-- test_search.cpp
 ```
 
-## Resumo dos Arquivos
+## Camadas e dependencias
 
-### core/ — Dados, Modelos, Estruturas
+O fluxo de dependencia e sempre em uma direcao:
 
-| Arquivo | Funcao |
+```
+ui  ->  engine  ->  core
+audio ------------>  core
+```
+
+- **core** nao inclui nada de `engine` nem de `ui`.
+- **engine** e a unica camada que cria `QProcess`.
+- **ui** nunca monta linha de comando: recebe objetos `Command` prontos.
+
+### Por que `Command`
+
+Um comando trafega como programa + lista de argumentos + variaveis de ambiente,
+da construcao ate o `QProcess`. Nada passa por shell e nada e reconstruido a
+partir de uma string, entao nome de pacote ou remote com caractere especial nao
+quebra nem vira dois argumentos. `Command::toString()` existe so para exibir na
+UI e nas exportacoes.
+
+### Threading
+
+| Onde | Thread |
 |---|---|
-| `searchitem` | Struct com nome, versao, repositorio, descricao, comando de instalacao, tipo (pacman/AUR/flatpak) e status de instalacao. |
-| `searchmodel` | Adapta lista de `SearchItem` para `QAbstractListModel` com suporte a exportacao CSV/JSON/TXT. |
-| `sortfilterproxymodel` | Filtra por nome/descricao e por tipo (Pacman/AUR/Flatpak/todos). |
-| `theme.h` | Define cores Catppuccin Mocha/Latte como constantes para uso no C++. |
+| `SearchEngine::search*`, `check*Updates`, `query*PackageInfo` | tarefas do `QtConcurrent` |
+| `SearchCoordinator`, `CommandRunner`, toda a `ui` | thread da UI |
+| `ProcessRunner::cancelAll()`, `SearchEngine::cancelSearch()` | qualquer thread |
 
-### engine/ — Logica de Busca e Execucao
+O cancelamento nunca toca no `QProcess` de outra thread: `cancelAll()` incrementa
+um contador atomico e cada `run()` em andamento mata o proprio processo. Os
+resultados de buscas ja substituidas sao descartados por geracao, sem `wait`
+bloqueando a interface.
 
-| Arquivo | Funcao |
+## Build
+
+| Comando | Para que |
 |---|---|
-| `searchengine` | Executa `pacman -Ss`, `paru -Ss` e `flatpak search` via `QProcess`, faz o parsing e devolve listas de `SearchItem`. |
-| `searchcoordinator` | Centraliza pesquisas (Pacman + AUR em paralelo via `QtConcurrent`) e gerencia fila de comandos (install/remove/update). |
-| `commandrunner` | Executa comandos externos via `QProcess` com suporte a sequencias e emite sinais de progresso/conclusao. |
+| `./run.sh` | Desenvolvimento: compila em `build/` e executa |
+| `./make-appimage.sh` | Producao: AppImage portatil com Qt6 embutido |
+| `cmake -B build -DBUILD_TESTS=ON && ctest --test-dir build` | Testes |
+| `./install-desktop.sh` | Atalho no menu de aplicacoes |
 
-### ui/ — Widgets da Interface
-
-| Arquivo | Funcao |
-|---|---|
-| `mainwindow` | Janela frameless com titlebar, barra de busca, lista de resultados, detail panel e console. Contem `main()`. |
-| `detailpanel` | Painel lateral com informacoes detalhadas do pacote selecionado e botoes Instalar/Remover. |
-| `outputconsole` | Console tipo terminal com codificacao de cores: erro (vermelho), sucesso (verde), info (ciano). |
-| `packagedelegate` | Desenho customizado de cada item da lista com nome, versao, repo e botoes de acao. |
-
-### audio/ — Audio
-
-| Arquivo | Funcao |
-|---|---|
-| `soundmanager` | Singleton que toca sons de sucesso, erro e clique via `QSoundEffect`. |
-
-### Estilos
-
-| Arquivo | Funcao |
-|---|---|
-| `dark.qss` | Tema escuro Catppuccin Mocha (169 linhas). |
-| `light.qss` | Tema claro Catppuccin Latte (169 linhas). |
-
-### Build e Deploy
-
-| Arquivo | Funcao |
-|---|---|
-| `CMakeLists.txt` | Configuracao CMake com Qt6, C++17, AUTOMOC/AUTORCC. |
-| `sounds.qrc` | Vincula WAV e QSS como recursos embedados no binario. |
-| `run.sh` | Compila (se necessario) e executa o binario. |
-| `pack.sh` | Gera `.tar.gz` do projeto. |
-| `install-desktop.sh` | Instala icone SVG + atalho .desktop no menu de aplicacoes. |
+Os testes cobrem parsing (pacman/AUR/flatpak/updates/info), construcao de
+comandos, relevancia, o model e a exportacao — tudo sem depender do que esta
+instalado na maquina.

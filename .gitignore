@@ -1,0 +1,22 @@
+# Artefatos de build
+build/
+build-*/
+Testing/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+
+# Ferramentas baixadas pelo make-appimage.sh
+tools/
+
+# Empacotamento
+*.AppImage
+*.tar.gz
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*~

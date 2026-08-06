@@ -1,6 +1,7 @@
 #include "audio/soundmanager.h"
-#include <QUrl>
+#include "core/appsettings.h"
 #include <QTimer>
+#include <QUrl>
 
 SoundManager& SoundManager::instance()
 {
@@ -11,20 +12,19 @@ SoundManager& SoundManager::instance()
 SoundManager::SoundManager(QObject *parent)
     : QObject(parent)
 {
-    QSettings s("CachyOS", "UnifiedSearch");
-    m_enabled = s.value("soundEnabled", true).toBool();
+    m_enabled = AppSettings::soundEnabled();
 
     m_sfxSuccess = new QSoundEffect(this);
     m_sfxSuccess->setSource(QUrl("qrc:/sounds/success.wav"));
-    m_sfxSuccess->setVolume(s.value("soundVolumeSuccess", 0.8).toDouble());
+    m_sfxSuccess->setVolume(AppSettings::soundVolumeSuccess());
 
     m_sfxError = new QSoundEffect(this);
     m_sfxError->setSource(QUrl("qrc:/sounds/error.wav"));
-    m_sfxError->setVolume(s.value("soundVolumeError", 0.7).toDouble());
+    m_sfxError->setVolume(AppSettings::soundVolumeError());
 
     m_sfxClick = new QSoundEffect(this);
     m_sfxClick->setSource(QUrl("qrc:/sounds/click.wav"));
-    m_sfxClick->setVolume(s.value("soundVolumeClick", 0.6).toDouble());
+    m_sfxClick->setVolume(AppSettings::soundVolumeClick());
 }
 
 void SoundManager::playSuccess()
@@ -64,17 +64,16 @@ void SoundManager::playPreview(const QString &type, double volume)
 
 void SoundManager::reloadSettings()
 {
-    QSettings s("CachyOS", "UnifiedSearch");
-    m_enabled = s.value("soundEnabled", true).toBool();
-    m_sfxSuccess->setVolume(s.value("soundVolumeSuccess", 0.8).toDouble());
-    m_sfxError->setVolume(s.value("soundVolumeError", 0.7).toDouble());
-    m_sfxClick->setVolume(s.value("soundVolumeClick", 0.6).toDouble());
+    m_enabled = AppSettings::soundEnabled();
+    m_sfxSuccess->setVolume(AppSettings::soundVolumeSuccess());
+    m_sfxError->setVolume(AppSettings::soundVolumeError());
+    m_sfxClick->setVolume(AppSettings::soundVolumeClick());
 }
 
 void SoundManager::setEnabled(bool e)
 {
     m_enabled = e;
-    QSettings("CachyOS", "UnifiedSearch").setValue("soundEnabled", e);
+    AppSettings::setSoundEnabled(e);
     emit toggled(e);
 }
 

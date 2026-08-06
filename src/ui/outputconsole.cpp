@@ -1,6 +1,6 @@
 #include "ui/outputconsole.h"
+#include "core/appsettings.h"
 #include "core/theme.h"
-#include <QSettings>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -41,8 +41,7 @@ void OutputConsole::setupUI()
     m_output->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_output->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_output->setMinimumHeight(120);
-    QSettings s("CachyOS", "UnifiedSearch");
-    m_output->setMaximumHeight(s.value("consoleMaxHeight", 280).toInt());
+    m_output->setMaximumHeight(AppSettings::consoleMaxHeight());
 
     m_inputLine = new QLineEdit(this);
     m_inputLine->setObjectName("consoleInput");
@@ -118,9 +117,11 @@ void OutputConsole::attachProcess(QProcess *process)
         disconnect(m_activeProcess.data(), nullptr, this, nullptr);
 
     m_activeProcess = process;
+    m_readBuffer.clear();
     m_inputLine->clear();
     m_inputLine->setEnabled(true);
     m_inputLine->setFocus();
+    setPasswordMode(false);
 
     connect(process, &QProcess::readyReadStandardOutput,
             this, &OutputConsole::onReadyReadStdout);
@@ -173,6 +174,37 @@ void OutputConsole::onReadyReadStdout()
         m_readBuffer = m_readBuffer.mid(idx + 1);
         appendLine(line);
     }
+
+    // Um prompt de senha nao termina em '\n': sem isso ele ficava preso no
+    // buffer e o usuario nao via o pedido de senha.
+    if (!m_readBuffer.isEmpty() && looksLikePasswordPrompt(m_readBuffer)) {
+        appendLine(m_readBuffer);
+        m_readBuffer.clear();
+        setPasswordMode(true);
+    }
+}
+
+bool OutputConsole::looksLikePasswordPrompt(const QString &text)
+{
+    const QString lower = text.trimmed().toLower();
+    if (lower.isEmpty())
+        return false;
+    return lower.contains("[sudo]")
+        || lower.contains("password")
+        || lower.contains("senha")
+        || lower.contains("passphrase");
+}
+
+void OutputConsole::setPasswordMode(bool enabled)
+{
+    if (m_passwordMode == enabled)
+        return;
+
+    m_passwordMode = enabled;
+    m_inputLine->setEchoMode(enabled ? QLineEdit::Password : QLineEdit::Normal);
+    m_inputLine->setPlaceholderText(enabled
+        ? QStringLiteral("Senha (não será exibida)...")
+        : QStringLiteral("Entrada para o processo (Enter para enviar)..."));
 }
 
 void OutputConsole::appendLine(const QString &text)
@@ -214,9 +246,14 @@ void OutputConsole::onInputSubmitted()
     if (input.isEmpty()) return;
 
     m_inputLine->clear();
-    appendOutput(QString("> %1\n").arg(input), QColor(m_colorInfo));
+    // Uma senha nunca vai para o transcript do console.
+    appendOutput(m_passwordMode
+                     ? QStringLiteral("> ********\n")
+                     : QString("> %1\n").arg(input),
+                 QColor(m_colorInfo));
     m_activeProcess->write((input + "\n").toUtf8());
     m_activeProcess->waitForBytesWritten(1000);
+    setPasswordMode(false);
 }
 
 void OutputConsole::onProcessFinished(int exitCode, QProcess::ExitStatus status)
@@ -228,6 +265,7 @@ void OutputConsole::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 
     m_inputLine->setEnabled(false);
     m_activeProcess = nullptr;
+    setPasswordMode(false);
 
     if (status == QProcess::NormalExit && exitCode == 0) {
         appendSuccess("Processo concluído com sucesso.");

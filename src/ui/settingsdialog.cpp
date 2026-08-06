@@ -1,5 +1,6 @@
 #include "ui/settingsdialog.h"
 #include "audio/soundmanager.h"
+#include "core/appsettings.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -11,7 +12,6 @@ static int volumeToSlider(double vol) { return qRound(qSqrt(vol) * 100.0); }
 
 SettingsDialog::SettingsDialog(bool currentDark, QWidget *parent)
     : QDialog(parent)
-    , m_settings("CachyOS", "UnifiedSearch")
     , m_initialDark(currentDark)
 {
     setWindowTitle("Configurações");
@@ -205,38 +205,32 @@ void SettingsDialog::setupAboutTab(QTabWidget *tabs)
 
 void SettingsDialog::loadSettings()
 {
-    int val;
+    // Valores e defaults vem do AppSettings, os mesmos que o resto do app le.
+    const int themeIdx = m_themeCombo->findData(AppSettings::theme());
+    if (themeIdx >= 0) m_themeCombo->setCurrentIndex(themeIdx);
 
-    QString theme = m_settings.value("theme", "system").toString();
-    int idx = m_themeCombo->findData(theme);
-    if (idx >= 0) m_themeCombo->setCurrentIndex(idx);
+    m_soundCheck->setChecked(AppSettings::soundEnabled());
 
-    m_soundCheck->setChecked(m_settings.value("soundEnabled", true).toBool());
+    auto applyVolume = [](QSlider *slider, QLabel *label, double volume) {
+        const int val = volumeToSlider(volume);
+        slider->setValue(val);
+        label->setText(QString("%1%").arg(val));
+    };
+    applyVolume(m_volSliderSuccess, m_volLabelSuccess, AppSettings::soundVolumeSuccess());
+    applyVolume(m_volSliderError, m_volLabelError, AppSettings::soundVolumeError());
+    applyVolume(m_volSliderClick, m_volLabelClick, AppSettings::soundVolumeClick());
 
-    val = volumeToSlider(m_settings.value("soundVolumeSuccess", 0.8).toDouble());
-    m_volSliderSuccess->setValue(val);
-    m_volLabelSuccess->setText(QString("%1%").arg(val));
+    m_timeoutPacman->setValue(AppSettings::pacmanTimeoutMs());
+    m_timeoutAur->setValue(AppSettings::aurTimeoutMs());
+    m_timeoutFlatpak->setValue(AppSettings::flatpakTimeoutMs());
+    m_historyLimit->setValue(AppSettings::historyLimit());
+    m_minScore->setValue(AppSettings::minRelevanceScore());
+    m_debounceDelay->setValue(AppSettings::debounceDelayMs());
 
-    val = volumeToSlider(m_settings.value("soundVolumeError", 0.7).toDouble());
-    m_volSliderError->setValue(val);
-    m_volLabelError->setText(QString("%1%").arg(val));
+    m_consoleMaxHeight->setValue(AppSettings::consoleMaxHeight());
 
-    val = volumeToSlider(m_settings.value("soundVolumeClick", 0.6).toDouble());
-    m_volSliderClick->setValue(val);
-    m_volLabelClick->setText(QString("%1%").arg(val));
-
-    m_timeoutPacman->setValue(m_settings.value("pacmanTimeout", 15000).toInt());
-    m_timeoutAur->setValue(m_settings.value("aurTimeout", 30000).toInt());
-    m_timeoutFlatpak->setValue(m_settings.value("flatpakTimeout", 15000).toInt());
-    m_historyLimit->setValue(m_settings.value("historyLimit", 20).toInt());
-    m_minScore->setValue(m_settings.value("minScore", 15).toInt());
-    m_debounceDelay->setValue(m_settings.value("debounceDelay", 400).toInt());
-
-    m_consoleMaxHeight->setValue(m_settings.value("consoleMaxHeight", 280).toInt());
-
-    int cref = m_settings.value("crossRefSpeed", 1).toInt();
-    int cidx = m_crossRefSpeed->findData(cref);
-    if (cidx >= 0) m_crossRefSpeed->setCurrentIndex(cidx);
+    const int crossRefIdx = m_crossRefSpeed->findData(AppSettings::crossRefSpeed());
+    if (crossRefIdx >= 0) m_crossRefSpeed->setCurrentIndex(crossRefIdx);
 
     connect(m_volSliderSuccess, &QSlider::valueChanged, this, [this](int v) {
         m_volLabelSuccess->setText(QString("%1%").arg(v));
@@ -260,19 +254,22 @@ void SettingsDialog::loadSettings()
 
 void SettingsDialog::saveSettings()
 {
-    m_settings.setValue("theme", m_themeCombo->currentData().toString());
-    m_settings.setValue("soundEnabled", m_soundCheck->isChecked());
-    m_settings.setValue("soundVolumeSuccess", sliderToVolume(m_volSliderSuccess->value()));
-    m_settings.setValue("soundVolumeError", sliderToVolume(m_volSliderError->value()));
-    m_settings.setValue("soundVolumeClick", sliderToVolume(m_volSliderClick->value()));
+    using namespace AppSettings;
+    QSettings settings = AppSettings::open();
 
-    m_settings.setValue("pacmanTimeout", m_timeoutPacman->value());
-    m_settings.setValue("aurTimeout", m_timeoutAur->value());
-    m_settings.setValue("flatpakTimeout", m_timeoutFlatpak->value());
-    m_settings.setValue("historyLimit", m_historyLimit->value());
-    m_settings.setValue("minScore", m_minScore->value());
-    m_settings.setValue("debounceDelay", m_debounceDelay->value());
+    settings.setValue(Keys::Theme, m_themeCombo->currentData().toString());
+    settings.setValue(Keys::SoundEnabled, m_soundCheck->isChecked());
+    settings.setValue(Keys::SoundVolumeSuccess, sliderToVolume(m_volSliderSuccess->value()));
+    settings.setValue(Keys::SoundVolumeError, sliderToVolume(m_volSliderError->value()));
+    settings.setValue(Keys::SoundVolumeClick, sliderToVolume(m_volSliderClick->value()));
 
-    m_settings.setValue("consoleMaxHeight", m_consoleMaxHeight->value());
-    m_settings.setValue("crossRefSpeed", m_crossRefSpeed->currentData().toInt());
+    settings.setValue(Keys::PacmanTimeout, m_timeoutPacman->value());
+    settings.setValue(Keys::AurTimeout, m_timeoutAur->value());
+    settings.setValue(Keys::FlatpakTimeout, m_timeoutFlatpak->value());
+    settings.setValue(Keys::HistoryLimit, m_historyLimit->value());
+    settings.setValue(Keys::MinScore, m_minScore->value());
+    settings.setValue(Keys::DebounceDelay, m_debounceDelay->value());
+
+    settings.setValue(Keys::ConsoleMaxHeight, m_consoleMaxHeight->value());
+    settings.setValue(Keys::CrossRefSpeed, m_crossRefSpeed->currentData().toInt());
 }

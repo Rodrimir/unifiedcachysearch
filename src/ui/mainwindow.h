@@ -13,6 +13,8 @@
 #include <QEvent>
 #include <QStackedWidget>
 #include <QTabBar>
+#include <QFutureWatcher>
+#include "core/command.h"
 #include "core/searchmodel.h"
 #include "core/sortfilterproxymodel.h"
 #include "ui/packagedelegate.h"
@@ -30,8 +32,8 @@ public:
 
 private slots:
     void onSearchClicked();
-    void onInstallClicked(const QString &command);
-    void onUninstallClicked(const QString &command);
+    void onInstallClicked(const Command &command);
+    void onUninstallClicked(const Command &command);
     void onInstallAllClicked();
     void onClearClicked();
     void onSearchTextChanged(const QString &text);
@@ -108,6 +110,7 @@ private:
     SearchCoordinator *m_coordinator;
     QTimer *m_searchTimer;
     QCompleter *m_completer;
+    QFutureWatcher<QList<SearchItem>> *m_updatesWatcher;
 
     bool m_isDark;
     bool m_inUpdateMode = false;
